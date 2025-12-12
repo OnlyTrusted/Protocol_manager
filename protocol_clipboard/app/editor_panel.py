@@ -74,8 +74,8 @@ class EditorPanel(QWidget):
         # Copy to clipboard
         clipboard.copy(content)
         
-        # Emit update signal for status bar
-        signals.protocol_updated.emit(model_name, protocol_name, version, content)
+        # Emit loaded signal for status bar
+        signals.protocol_loaded.emit(model_name, protocol_name, version)
     
     def _on_text_changed(self):
         """Handle text changes - trigger autosave with debounce."""
@@ -96,6 +96,9 @@ class EditorPanel(QWidget):
         
         content = self.text_edit.toPlainText()
         storage.write_version(self.current_model, self.current_protocol, self.current_version, content)
+        
+        # Emit saved signal
+        signals.protocol_saved.emit(self.current_model, self.current_protocol, self.current_version)
     
     def clear(self):
         """Clear the editor."""

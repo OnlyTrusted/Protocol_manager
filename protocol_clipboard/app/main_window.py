@@ -89,11 +89,11 @@ class MainWindow(QMainWindow):
     
     def _connect_signals(self):
         """Connect to application signals."""
-        signals.protocol_selected.connect(self._on_protocol_selected)
+        signals.protocol_loaded.connect(self._on_protocol_loaded)
         signals.hierarchy_changed.connect(self._on_hierarchy_changed)
     
-    def _on_protocol_selected(self, model_name: str, protocol_name: str, version: str):
-        """Update status bar when protocol is selected."""
+    def _on_protocol_loaded(self, model_name: str, protocol_name: str, version: str):
+        """Update status bar when protocol is loaded."""
         self.status_bar.showMessage(f"Copied '{protocol_name}' (v{version}) to clipboard")
     
     def _on_hierarchy_changed(self):

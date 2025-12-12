@@ -6,6 +6,7 @@ from PyQt5.QtCore import Qt
 
 from .styles import get_list_widget_stylesheet, get_button_stylesheet, get_label_stylesheet
 from .signals import signals
+from .hierarchy_dialog import HierarchyDialog
 from ..utils.storage import storage
 from ..utils.dialogs import get_text_input, confirm_action
 
@@ -124,12 +125,32 @@ class ModelsPanel(QWidget):
         rename_action = menu.addAction("Rename")
         delete_action = menu.addAction("Delete")
         
+        menu.addSeparator()
+        move_up_action = menu.addAction("Move Up")
+        move_down_action = menu.addAction("Move Down")
+        
+        menu.addSeparator()
+        hierarchy_action = menu.addAction("Open Hierarchy")
+        
+        # Disable move up for first item, move down for last item
+        current_row = self.list_widget.row(item)
+        if current_row == 0:
+            move_up_action.setEnabled(False)
+        if current_row == self.list_widget.count() - 1:
+            move_down_action.setEnabled(False)
+        
         action = menu.exec_(self.list_widget.mapToGlobal(position))
         
         if action == rename_action:
             self._on_rename_model(item)
         elif action == delete_action:
             self._on_delete_model()
+        elif action == move_up_action:
+            self._on_move_model_up()
+        elif action == move_down_action:
+            self._on_move_model_down()
+        elif action == hierarchy_action:
+            self._on_open_hierarchy()
     
     def refresh(self):
         """Refresh the models list after hierarchy changes."""
@@ -146,3 +167,64 @@ class ModelsPanel(QWidget):
         else:
             # No current selection, select first
             self.select_first_model()
+    
+    def _on_move_model_up(self):
+        """Move the selected model up in the list."""
+        current_item = self.list_widget.currentItem()
+        if not current_item:
+            return
+        
+        current_row = self.list_widget.row(current_item)
+        if current_row == 0:
+            return  # Already at top
+        
+        # Get current model name
+        model_name = current_item.text()
+        
+        # Update models list
+        models = storage.load_models()
+        try:
+            current_index = models.index(model_name)
+            models[current_index], models[current_index - 1] = models[current_index - 1], models[current_index]
+            storage.save_models(models)
+            
+            # Refresh list and maintain selection
+            self._load_models()
+            self.list_widget.setCurrentRow(current_row - 1)
+            self._on_model_selected(self.list_widget.item(current_row - 1))
+        except (ValueError, IndexError):
+            # Model not found in list or index error - just refresh
+            self._load_models()
+    
+    def _on_move_model_down(self):
+        """Move the selected model down in the list."""
+        current_item = self.list_widget.currentItem()
+        if not current_item:
+            return
+        
+        current_row = self.list_widget.row(current_item)
+        if current_row == self.list_widget.count() - 1:
+            return  # Already at bottom
+        
+        # Get current model name
+        model_name = current_item.text()
+        
+        # Update models list
+        models = storage.load_models()
+        try:
+            current_index = models.index(model_name)
+            models[current_index], models[current_index + 1] = models[current_index + 1], models[current_index]
+            storage.save_models(models)
+            
+            # Refresh list and maintain selection
+            self._load_models()
+            self.list_widget.setCurrentRow(current_row + 1)
+            self._on_model_selected(self.list_widget.item(current_row + 1))
+        except (ValueError, IndexError):
+            # Model not found in list or index error - just refresh
+            self._load_models()
+    
+    def _on_open_hierarchy(self):
+        """Open the hierarchy dialog."""
+        dialog = HierarchyDialog(self)
+        dialog.exec_()
