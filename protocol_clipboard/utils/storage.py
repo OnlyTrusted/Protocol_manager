@@ -4,6 +4,7 @@ Handles JSON files and protocol text files with automatic directory creation.
 """
 import json
 import os
+import shutil
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
@@ -99,7 +100,6 @@ class StorageManager:
         # Delete directory if it exists
         model_path = self.base_path / model_name
         if model_path.exists():
-            import shutil
             shutil.rmtree(model_path)
         
         return True
