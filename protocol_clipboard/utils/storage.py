@@ -185,7 +185,7 @@ class StorageManager:
         return True
     
     def delete_protocol(self, model_name: str, protocol_name: str) -> bool:
-        """Delete a protocol and its file."""
+        """Delete a protocol and its file/folder."""
         protocols = self.load_protocol_order(model_name)
         if protocol_name not in protocols:
             return False
@@ -194,7 +194,12 @@ class StorageManager:
         protocols.remove(protocol_name)
         self.save_protocol_order(model_name, protocols)
         
-        # Delete file if it exists
+        # Delete versioned protocol directory if it exists
+        protocol_dir = self._get_protocol_dir(model_name, protocol_name)
+        if protocol_dir.exists():
+            shutil.rmtree(protocol_dir)
+        
+        # Delete legacy .txt file if it exists
         protocol_file = self.base_path / model_name / f"{protocol_name}.txt"
         if protocol_file.exists():
             protocol_file.unlink()
