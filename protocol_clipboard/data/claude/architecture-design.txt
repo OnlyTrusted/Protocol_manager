@@ -1,0 +1,16 @@
+Please help me design the architecture for a new system with the following requirements:
+
+System Overview:
+
+Key Components:
+1. 
+2. 
+3. 
+
+Design Considerations:
+- Scalability
+- Performance
+- Maintainability
+- Security
+
+Please provide architectural recommendations and diagrams if applicable.

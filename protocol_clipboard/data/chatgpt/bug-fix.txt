@@ -1,0 +1,14 @@
+I encountered a bug with the following symptoms:
+
+[Describe the bug here]
+
+Steps to reproduce:
+1. 
+2. 
+3. 
+
+Expected behavior:
+
+Actual behavior:
+
+Please help me identify and fix this issue.

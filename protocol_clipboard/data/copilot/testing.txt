@@ -1,0 +1,14 @@
+Please help me create comprehensive tests for:
+
+Component/Module:
+
+Test Types Needed:
+- Unit tests
+- Integration tests
+- Edge cases
+
+Coverage Goals:
+
+Test Framework:
+
+Please provide test implementation examples.

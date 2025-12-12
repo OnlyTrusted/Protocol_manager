@@ -1,0 +1,10 @@
+I need help implementing the following feature:
+
+Feature description:
+
+Requirements:
+- 
+- 
+- 
+
+Please provide implementation guidance and code examples.

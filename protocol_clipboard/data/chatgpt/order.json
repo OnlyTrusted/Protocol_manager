@@ -1,0 +1,7 @@
+{
+  "protocols": [
+    "code-review",
+    "bug-fix",
+    "feature-request"
+  ]
+}

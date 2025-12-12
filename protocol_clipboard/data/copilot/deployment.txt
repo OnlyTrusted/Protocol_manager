@@ -1,0 +1,21 @@
+Deployment checklist and instructions:
+
+Environment:
+
+Pre-deployment:
+- [ ] Code reviewed and merged
+- [ ] Tests passing
+- [ ] Documentation updated
+- [ ] Configuration validated
+
+Deployment Steps:
+1. 
+2. 
+3. 
+
+Post-deployment:
+- [ ] Verify services are running
+- [ ] Check logs for errors
+- [ ] Monitor metrics
+
+Rollback Plan:
