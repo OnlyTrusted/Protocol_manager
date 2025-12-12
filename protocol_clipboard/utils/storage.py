@@ -200,6 +200,230 @@ class StorageManager:
             protocol_file.unlink()
         
         return True
+    
+    # ============= Version Management Methods =============
+    
+    def _parse_version(self, version: str) -> tuple:
+        """
+        Parse version string to tuple for comparison.
+        Returns (major, minor) or (0, 0) for invalid versions.
+        """
+        try:
+            parts = version.split('.')
+            return (int(parts[0]), int(parts[1]) if len(parts) > 1 else 0)
+        except (ValueError, IndexError):
+            return (0, 0)
+    
+    def _get_protocol_dir(self, model_name: str, protocol_name: str) -> Path:
+        """Get the directory path for a protocol."""
+        return self.base_path / model_name / protocol_name
+    
+    def _get_versions_file(self, model_name: str, protocol_name: str) -> Path:
+        """Get the versions.json file path for a protocol."""
+        return self._get_protocol_dir(model_name, protocol_name) / "versions.json"
+    
+    def _get_version_file(self, model_name: str, protocol_name: str, version: str) -> Path:
+        """Get the file path for a specific version."""
+        return self._get_protocol_dir(model_name, protocol_name) / f"{version}.txt"
+    
+    def ensure_protocol_versions(self, model_name: str, protocol_name: str):
+        """
+        Ensure protocol has version structure. Migrates old .txt format if needed.
+        Creates versions.json with 1.0 as default if missing.
+        """
+        protocol_dir = self._get_protocol_dir(model_name, protocol_name)
+        versions_file = self._get_versions_file(model_name, protocol_name)
+        old_protocol_file = self.base_path / model_name / f"{protocol_name}.txt"
+        
+        # Check if we need to migrate from old format
+        if not versions_file.exists() and old_protocol_file.exists():
+            # Migration: old flat .txt file exists
+            protocol_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Read old content
+            content = old_protocol_file.read_text(encoding='utf-8')
+            
+            # Create version 1.0 with the old content
+            version_file = self._get_version_file(model_name, protocol_name, "1.0")
+            version_file.write_text(content, encoding='utf-8')
+            
+            # Create versions.json
+            versions_data = {
+                "versions": ["1.0"],
+                "current": "1.0"
+            }
+            with open(versions_file, 'w', encoding='utf-8') as f:
+                json.dump(versions_data, f, indent=2)
+            
+            # Delete old file
+            old_protocol_file.unlink()
+            
+        elif not versions_file.exists():
+            # No old file, create fresh versioning structure
+            protocol_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Create empty version 1.0
+            version_file = self._get_version_file(model_name, protocol_name, "1.0")
+            version_file.write_text("", encoding='utf-8')
+            
+            # Create versions.json
+            versions_data = {
+                "versions": ["1.0"],
+                "current": "1.0"
+            }
+            with open(versions_file, 'w', encoding='utf-8') as f:
+                json.dump(versions_data, f, indent=2)
+    
+    def list_versions(self, model_name: str, protocol_name: str) -> List[str]:
+        """
+        List all versions for a protocol, ordered semantically.
+        Returns empty list if no versions exist.
+        """
+        versions_file = self._get_versions_file(model_name, protocol_name)
+        
+        if not versions_file.exists():
+            return []
+        
+        try:
+            with open(versions_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                versions = data.get('versions', [])
+                
+                # Sort versions by semantic versioning
+                return sorted(versions, key=self._parse_version)
+        except (json.JSONDecodeError, IOError):
+            return []
+    
+    def get_current_version(self, model_name: str, protocol_name: str) -> str:
+        """
+        Get the current/default version for a protocol.
+        Returns "1.0" if not set or file doesn't exist.
+        """
+        versions_file = self._get_versions_file(model_name, protocol_name)
+        
+        if not versions_file.exists():
+            return "1.0"
+        
+        try:
+            with open(versions_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return data.get('current', "1.0")
+        except (json.JSONDecodeError, IOError):
+            return "1.0"
+    
+    def set_current_version(self, model_name: str, protocol_name: str, version: str) -> bool:
+        """
+        Set the current/default version for a protocol.
+        Returns True if successful, False otherwise.
+        """
+        versions_file = self._get_versions_file(model_name, protocol_name)
+        
+        if not versions_file.exists():
+            return False
+        
+        try:
+            with open(versions_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # Verify version exists
+            if version not in data.get('versions', []):
+                return False
+            
+            data['current'] = version
+            
+            with open(versions_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2)
+            
+            return True
+        except (json.JSONDecodeError, IOError):
+            return False
+    
+    def create_new_version(self, model_name: str, protocol_name: str, base_version: str = None) -> Optional[str]:
+        """
+        Create a new version by incrementing the patch number.
+        Copies content from base_version if provided, otherwise empty.
+        Returns the new version name (e.g., "1.1") or None if failed.
+        """
+        versions_file = self._get_versions_file(model_name, protocol_name)
+        
+        if not versions_file.exists():
+            return None
+        
+        try:
+            with open(versions_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # Use list_versions to get sorted list
+            versions = self.list_versions(model_name, protocol_name)
+            
+            if not versions:
+                return None
+            
+            # Get the latest version and increment patch
+            latest = versions[-1]
+            major, minor = self._parse_version(latest)
+            
+            new_version = f"{major}.{minor + 1}"
+            
+            # Get content from base version or use empty
+            content = ""
+            if base_version and base_version in versions:
+                base_file = self._get_version_file(model_name, protocol_name, base_version)
+                if base_file.exists():
+                    content = base_file.read_text(encoding='utf-8')
+            elif base_version is None and versions:
+                # Use current version as base if no base specified
+                current = data.get('current', versions[-1])
+                current_file = self._get_version_file(model_name, protocol_name, current)
+                if current_file.exists():
+                    content = current_file.read_text(encoding='utf-8')
+            
+            # Create new version file
+            new_file = self._get_version_file(model_name, protocol_name, new_version)
+            new_file.write_text(content, encoding='utf-8')
+            
+            # Update versions.json
+            versions.append(new_version)
+            data['versions'] = versions
+            
+            with open(versions_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2)
+            
+            return new_version
+        except (json.JSONDecodeError, IOError, ValueError):
+            return None
+    
+    def read_version(self, model_name: str, protocol_name: str, version: str = None) -> str:
+        """
+        Read content of a specific version.
+        If version is None, reads the current version.
+        Returns empty string if version doesn't exist.
+        """
+        # Ensure versioning is set up
+        self.ensure_protocol_versions(model_name, protocol_name)
+        
+        if version is None:
+            version = self.get_current_version(model_name, protocol_name)
+        
+        version_file = self._get_version_file(model_name, protocol_name, version)
+        
+        if not version_file.exists():
+            return ""
+        
+        try:
+            return version_file.read_text(encoding='utf-8')
+        except IOError:
+            return ""
+    
+    def write_version(self, model_name: str, protocol_name: str, version: str, content: str):
+        """
+        Write content to a specific version file.
+        """
+        # Ensure versioning is set up
+        self.ensure_protocol_versions(model_name, protocol_name)
+        
+        version_file = self._get_version_file(model_name, protocol_name, version)
+        version_file.write_text(content, encoding='utf-8')
 
 
 # Global storage manager instance

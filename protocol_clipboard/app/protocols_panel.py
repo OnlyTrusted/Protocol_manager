@@ -7,7 +7,7 @@ from PyQt5.QtCore import Qt
 from .styles import get_list_widget_stylesheet, get_button_stylesheet, get_label_stylesheet
 from .signals import signals
 from ..utils.storage import storage
-from ..utils.dialogs import get_text_input, confirm_action
+from ..utils.dialogs import get_text_input, confirm_action, show_error
 
 
 class ProtocolsPanel(QWidget):
@@ -17,6 +17,7 @@ class ProtocolsPanel(QWidget):
         super().__init__(parent)
         self.current_model = None
         self.current_protocol = None
+        self.current_version = None
         self._setup_ui()
         self._connect_signals()
     
@@ -74,7 +75,15 @@ class ProtocolsPanel(QWidget):
         if item and self.current_model:
             protocol_name = item.text()
             self.current_protocol = protocol_name
-            signals.protocol_selected.emit(self.current_model, protocol_name)
+            
+            # Ensure versioning is set up
+            storage.ensure_protocol_versions(self.current_model, protocol_name)
+            
+            # Get the current version
+            version = storage.get_current_version(self.current_model, protocol_name)
+            self.current_version = version
+            
+            signals.protocol_selected.emit(self.current_model, protocol_name, version)
     
     def _on_add_protocol(self):
         """Handle adding a new protocol."""
@@ -84,6 +93,9 @@ class ProtocolsPanel(QWidget):
         name, ok = get_text_input(self, "New Protocol", "Enter protocol name:")
         if ok and name:
             if storage.add_protocol(self.current_model, name):
+                # Ensure versioning is set up for new protocol
+                storage.ensure_protocol_versions(self.current_model, name)
+                
                 self.list_widget.addItem(name)
                 # Select the newly added protocol
                 self.list_widget.setCurrentRow(self.list_widget.count() - 1)
@@ -105,7 +117,10 @@ class ProtocolsPanel(QWidget):
                 item.setText(new_name)
                 if self.current_protocol == old_name:
                     self.current_protocol = new_name
-                    signals.protocol_selected.emit(self.current_model, new_name)
+                    # Get current version and re-emit with new name
+                    version = storage.get_current_version(self.current_model, new_name)
+                    self.current_version = version
+                    signals.protocol_selected.emit(self.current_model, new_name, version)
     
     def _on_delete_protocol(self):
         """Handle deleting a protocol."""
@@ -135,9 +150,31 @@ class ProtocolsPanel(QWidget):
         if not item:
             return
         
+        protocol_name = item.text()
+        
         menu = QMenu(self)
         rename_action = menu.addAction("Rename")
         delete_action = menu.addAction("Delete")
+        
+        # Add version management submenu
+        menu.addSeparator()
+        add_version_action = menu.addAction("Add Version")
+        
+        # Create version selection submenu
+        version_menu = menu.addMenu("Select Version")
+        versions = storage.list_versions(self.current_model, protocol_name)
+        current_version = storage.get_current_version(self.current_model, protocol_name)
+        
+        version_actions = {}
+        for version in versions:
+            version_text = f"{version}"
+            if version == current_version:
+                version_text += " (current)"
+            version_action = version_menu.addAction(version_text)
+            version_actions[version_action] = version
+        
+        # Set as current action
+        set_current_action = menu.addAction("Set Selected as Current")
         
         action = menu.exec_(self.list_widget.mapToGlobal(position))
         
@@ -145,6 +182,55 @@ class ProtocolsPanel(QWidget):
             self._on_rename_protocol(item)
         elif action == delete_action:
             self._on_delete_protocol()
+        elif action == add_version_action:
+            self._on_add_version()
+        elif action == set_current_action:
+            self._on_set_current_version()
+        elif action in version_actions:
+            # User selected a specific version
+            selected_version = version_actions[action]
+            self._on_version_selected(selected_version)
+    
+    def _on_add_version(self):
+        """Handle adding a new version to the current protocol."""
+        if not self.current_model or not self.current_protocol:
+            return
+        
+        # Create new version (copies from current version)
+        new_version = storage.create_new_version(
+            self.current_model, 
+            self.current_protocol,
+            base_version=self.current_version
+        )
+        
+        if new_version:
+            # Emit signal to load the new version
+            self.current_version = new_version
+            signals.protocol_selected.emit(self.current_model, self.current_protocol, new_version)
+        else:
+            # Show error if version creation failed
+            show_error(
+                self,
+                "Version Creation Failed",
+                f"Failed to create new version for '{self.current_protocol}'. "
+                "Please ensure the protocol has valid versioning setup."
+            )
+    
+    def _on_version_selected(self, version: str):
+        """Handle selecting a specific version."""
+        if not self.current_model or not self.current_protocol:
+            return
+        
+        self.current_version = version
+        signals.protocol_selected.emit(self.current_model, self.current_protocol, version)
+    
+    def _on_set_current_version(self):
+        """Set the currently selected version as the default/current."""
+        if not self.current_model or not self.current_protocol or not self.current_version:
+            return
+        
+        storage.set_current_version(self.current_model, self.current_protocol, self.current_version)
+        signals.version_changed.emit(self.current_model, self.current_protocol, self.current_version)
     
     def refresh(self):
         """Refresh the protocols list after hierarchy changes."""

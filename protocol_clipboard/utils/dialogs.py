@@ -22,3 +22,10 @@ def confirm_action(parent, title: str, message: str) -> bool:
         QMessageBox.No
     )
     return reply == QMessageBox.Yes
+
+
+def show_error(parent, title: str, message: str):
+    """
+    Show error message dialog.
+    """
+    QMessageBox.critical(parent, title, message, QMessageBox.Ok)

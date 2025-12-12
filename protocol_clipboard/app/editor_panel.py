@@ -17,6 +17,7 @@ class EditorPanel(QWidget):
         super().__init__(parent)
         self.current_model = None
         self.current_protocol = None
+        self.current_version = None
         self.autosave_timer = QTimer()
         self.autosave_timer.setSingleShot(True)
         self.autosave_timer.timeout.connect(self._save_content)
@@ -47,21 +48,23 @@ class EditorPanel(QWidget):
         """Connect to application signals."""
         signals.protocol_selected.connect(self._on_protocol_selected)
     
-    def _on_protocol_selected(self, model_name: str, protocol_name: str):
-        """Handle protocol selection - load content and copy to clipboard."""
-        # Save current content first if different protocol
-        if self.current_model and self.current_protocol:
+    def _on_protocol_selected(self, model_name: str, protocol_name: str, version: str):
+        """Handle protocol selection - load version content and copy to clipboard."""
+        # Save current content first if different protocol or version
+        if self.current_model and self.current_protocol and self.current_version:
             if (self.current_model != model_name or 
-                self.current_protocol != protocol_name):
+                self.current_protocol != protocol_name or
+                self.current_version != version):
                 self._save_content()
         
-        # Load new protocol
+        # Load new protocol version
         self.current_model = model_name
         self.current_protocol = protocol_name
+        self.current_version = version
         
-        # Load content
+        # Load content from specific version
         self._is_loading = True
-        content = storage.load_protocol(model_name, protocol_name)
+        content = storage.read_version(model_name, protocol_name, version)
         self.text_edit.setPlainText(content)
         self._is_loading = False
         
@@ -72,14 +75,14 @@ class EditorPanel(QWidget):
         clipboard.copy(content)
         
         # Emit update signal for status bar
-        signals.protocol_updated.emit(model_name, protocol_name, content)
+        signals.protocol_updated.emit(model_name, protocol_name, version, content)
     
     def _on_text_changed(self):
         """Handle text changes - trigger autosave with debounce."""
         if self._is_loading:
             return
         
-        if not self.current_model or not self.current_protocol:
+        if not self.current_model or not self.current_protocol or not self.current_version:
             return
         
         # Restart the autosave timer (debounce ~400ms)
@@ -88,11 +91,11 @@ class EditorPanel(QWidget):
     
     def _save_content(self):
         """Save the current content to storage."""
-        if not self.current_model or not self.current_protocol:
+        if not self.current_model or not self.current_protocol or not self.current_version:
             return
         
         content = self.text_edit.toPlainText()
-        storage.save_protocol(self.current_model, self.current_protocol, content)
+        storage.write_version(self.current_model, self.current_protocol, self.current_version, content)
     
     def clear(self):
         """Clear the editor."""
@@ -102,3 +105,4 @@ class EditorPanel(QWidget):
         self._is_loading = False
         self.current_model = None
         self.current_protocol = None
+        self.current_version = None

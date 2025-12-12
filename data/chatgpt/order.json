@@ -1,3 +1,5 @@
 {
-  "protocols": []
+  "protocols": [
+    "CBR1"
+  ]
 }
