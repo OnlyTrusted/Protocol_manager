@@ -47,6 +47,9 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.models_panel, 1)
         layout.addWidget(self.protocols_panel, 1)
         layout.addWidget(self.editor_panel, 3)
+        
+        # Select first model after all panels are connected
+        self.models_panel.select_first_model()
     
     def _setup_menu(self):
         """Set up the menu bar."""

@@ -11,8 +11,12 @@ from typing import List, Dict, Any, Optional
 class StorageManager:
     """Manages persistent storage for models and protocols."""
     
-    def __init__(self, base_path: str = "data"):
+    def __init__(self, base_path: str = None):
         """Initialize storage manager with base data path."""
+        if base_path is None:
+            # Default to data directory relative to this package
+            package_dir = Path(__file__).parent.parent
+            base_path = package_dir / "data"
         self.base_path = Path(base_path)
         self.models_file = self.base_path / "models.json"
         self._ensure_directories()

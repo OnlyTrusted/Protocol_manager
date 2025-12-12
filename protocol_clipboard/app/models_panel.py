@@ -50,9 +50,10 @@ class ModelsPanel(QWidget):
         self.list_widget.clear()
         models = storage.load_models()
         self.list_widget.addItems(models)
-        
-        # Select first model if available
-        if models and self.list_widget.count() > 0:
+    
+    def select_first_model(self):
+        """Select the first model if available."""
+        if self.list_widget.count() > 0:
             self.list_widget.setCurrentRow(0)
             self._on_model_selected(self.list_widget.item(0))
     
@@ -140,4 +141,8 @@ class ModelsPanel(QWidget):
             for i in range(self.list_widget.count()):
                 if self.list_widget.item(i).text() == current:
                     self.list_widget.setCurrentRow(i)
+                    self._on_model_selected(self.list_widget.item(i))
                     break
+        else:
+            # No current selection, select first
+            self.select_first_model()

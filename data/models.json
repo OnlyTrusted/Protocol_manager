@@ -1,0 +1,7 @@
+{
+  "models": [
+    "chatgpt",
+    "claude",
+    "copilot"
+  ]
+}
