@@ -92,9 +92,9 @@ class MainWindow(QMainWindow):
         signals.protocol_selected.connect(self._on_protocol_selected)
         signals.hierarchy_changed.connect(self._on_hierarchy_changed)
     
-    def _on_protocol_selected(self, model_name: str, protocol_name: str):
+    def _on_protocol_selected(self, model_name: str, protocol_name: str, version: str):
         """Update status bar when protocol is selected."""
-        self.status_bar.showMessage(f"Copied '{protocol_name}' to clipboard")
+        self.status_bar.showMessage(f"Copied '{protocol_name}' (v{version}) to clipboard")
     
     def _on_hierarchy_changed(self):
         """Refresh panels when hierarchy changes."""
