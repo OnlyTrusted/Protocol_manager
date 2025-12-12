@@ -6,6 +6,7 @@ from PyQt5.QtCore import Qt
 
 from .styles import get_list_widget_stylesheet, get_button_stylesheet, get_label_stylesheet
 from .signals import signals
+from .hierarchy_dialog import HierarchyDialog
 from ..utils.storage import storage
 from ..utils.dialogs import get_text_input, confirm_action
 
@@ -182,14 +183,18 @@ class ModelsPanel(QWidget):
         
         # Update models list
         models = storage.load_models()
-        current_index = models.index(model_name)
-        models[current_index], models[current_index - 1] = models[current_index - 1], models[current_index]
-        storage.save_models(models)
-        
-        # Refresh list and maintain selection
-        self._load_models()
-        self.list_widget.setCurrentRow(current_row - 1)
-        self._on_model_selected(self.list_widget.item(current_row - 1))
+        try:
+            current_index = models.index(model_name)
+            models[current_index], models[current_index - 1] = models[current_index - 1], models[current_index]
+            storage.save_models(models)
+            
+            # Refresh list and maintain selection
+            self._load_models()
+            self.list_widget.setCurrentRow(current_row - 1)
+            self._on_model_selected(self.list_widget.item(current_row - 1))
+        except (ValueError, IndexError):
+            # Model not found in list or index error - just refresh
+            self._load_models()
     
     def _on_move_model_down(self):
         """Move the selected model down in the list."""
@@ -206,17 +211,20 @@ class ModelsPanel(QWidget):
         
         # Update models list
         models = storage.load_models()
-        current_index = models.index(model_name)
-        models[current_index], models[current_index + 1] = models[current_index + 1], models[current_index]
-        storage.save_models(models)
-        
-        # Refresh list and maintain selection
-        self._load_models()
-        self.list_widget.setCurrentRow(current_row + 1)
-        self._on_model_selected(self.list_widget.item(current_row + 1))
+        try:
+            current_index = models.index(model_name)
+            models[current_index], models[current_index + 1] = models[current_index + 1], models[current_index]
+            storage.save_models(models)
+            
+            # Refresh list and maintain selection
+            self._load_models()
+            self.list_widget.setCurrentRow(current_row + 1)
+            self._on_model_selected(self.list_widget.item(current_row + 1))
+        except (ValueError, IndexError):
+            # Model not found in list or index error - just refresh
+            self._load_models()
     
     def _on_open_hierarchy(self):
         """Open the hierarchy dialog."""
-        from .hierarchy_dialog import HierarchyDialog
         dialog = HierarchyDialog(self)
         dialog.exec_()
