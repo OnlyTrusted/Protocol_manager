@@ -203,6 +203,17 @@ class StorageManager:
     
     # ============= Version Management Methods =============
     
+    def _parse_version(self, version: str) -> tuple:
+        """
+        Parse version string to tuple for comparison.
+        Returns (major, minor) or (0, 0) for invalid versions.
+        """
+        try:
+            parts = version.split('.')
+            return (int(parts[0]), int(parts[1]) if len(parts) > 1 else 0)
+        except (ValueError, IndexError):
+            return (0, 0)
+    
     def _get_protocol_dir(self, model_name: str, protocol_name: str) -> Path:
         """Get the directory path for a protocol."""
         return self.base_path / model_name / protocol_name
@@ -278,16 +289,8 @@ class StorageManager:
                 data = json.load(f)
                 versions = data.get('versions', [])
                 
-                # Sort versions by semantic versioning (treating as floats for simplicity)
-                # Format is expected to be like "1.0", "1.1", "1.2", etc.
-                def version_key(v):
-                    try:
-                        parts = v.split('.')
-                        return (int(parts[0]), int(parts[1]) if len(parts) > 1 else 0)
-                    except (ValueError, IndexError):
-                        return (0, 0)
-                
-                return sorted(versions, key=version_key)
+                # Sort versions by semantic versioning
+                return sorted(versions, key=self._parse_version)
         except (json.JSONDecodeError, IOError):
             return []
     
@@ -350,16 +353,15 @@ class StorageManager:
             with open(versions_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
-            versions = data.get('versions', [])
+            # Use list_versions to get sorted list
+            versions = self.list_versions(model_name, protocol_name)
             
             if not versions:
                 return None
             
             # Get the latest version and increment patch
             latest = versions[-1]
-            parts = latest.split('.')
-            major = int(parts[0])
-            minor = int(parts[1]) if len(parts) > 1 else 0
+            major, minor = self._parse_version(latest)
             
             new_version = f"{major}.{minor + 1}"
             

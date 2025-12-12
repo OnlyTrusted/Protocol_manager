@@ -7,7 +7,7 @@ from PyQt5.QtCore import Qt
 from .styles import get_list_widget_stylesheet, get_button_stylesheet, get_label_stylesheet
 from .signals import signals
 from ..utils.storage import storage
-from ..utils.dialogs import get_text_input, confirm_action
+from ..utils.dialogs import get_text_input, confirm_action, show_error
 
 
 class ProtocolsPanel(QWidget):
@@ -207,6 +207,14 @@ class ProtocolsPanel(QWidget):
             # Emit signal to load the new version
             self.current_version = new_version
             signals.protocol_selected.emit(self.current_model, self.current_protocol, new_version)
+        else:
+            # Show error if version creation failed
+            show_error(
+                self,
+                "Version Creation Failed",
+                f"Failed to create new version for '{self.current_protocol}'. "
+                "Please ensure the protocol has valid versioning setup."
+            )
     
     def _on_version_selected(self, version: str):
         """Handle selecting a specific version."""
