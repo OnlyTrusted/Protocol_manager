@@ -1,0 +1,1 @@
+"""Protocol Clipboard Manager package."""

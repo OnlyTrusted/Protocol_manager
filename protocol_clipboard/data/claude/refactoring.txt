@@ -1,0 +1,11 @@
+I need help refactoring the following code to improve:
+- Code clarity and readability
+- Performance
+- Maintainability
+- Design patterns
+
+Current code:
+
+[Paste code here]
+
+Please suggest improvements and provide refactored version.
