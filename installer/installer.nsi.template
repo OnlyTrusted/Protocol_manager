@@ -1,0 +1,23 @@
+!define APP_NAME "{{APP_NAME}}"
+!define VERSION  "{{VERSION}}"
+
+Name "${APP_NAME} ${VERSION}"
+OutFile "${APP_NAME}_Setup_${VERSION}.exe"
+InstallDir "$PROGRAMFILES\\${APP_NAME}"
+RequestExecutionLevel user
+
+Section "MainSection" SEC01
+  SetOutPath "$INSTDIR"
+  File /r "installer\\staging\\*"
+  CreateShortCut "$SMPROGRAMS\\${APP_NAME}.lnk" "$INSTDIR\\bin\\${APP_NAME}.exe"
+SectionEnd
+
+Section -AdditionalIcons
+  CreateShortCut "$DESKTOP\\${APP_NAME}.lnk" "$INSTDIR\\bin\\${APP_NAME}.exe"
+SectionEnd
+
+Section "Uninstall"
+  Delete "$SMPROGRAMS\\${APP_NAME}.lnk"
+  Delete "$DESKTOP\\${APP_NAME}.lnk"
+  RMDir /r "$INSTDIR"
+SectionEnd
