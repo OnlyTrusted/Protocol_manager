@@ -4,7 +4,7 @@
 Name "${APP_NAME} ${VERSION}"
 OutFile "${APP_NAME}_Setup_${VERSION}.exe"
 InstallDir "$PROGRAMFILES\\${APP_NAME}"
-RequestExecutionLevel user
+RequestExecutionLevel admin
 
 Section "MainSection" SEC01
   SetOutPath "$INSTDIR"
