@@ -3,7 +3,6 @@ Main window - application entry point with layout and menu.
 """
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, 
                              QAction, QStatusBar)
-from PyQt5.QtCore import Qt
 
 from .styles import get_main_window_stylesheet
 from .signals import signals
