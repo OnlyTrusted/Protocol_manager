@@ -5,6 +5,7 @@ Handles JSON files and protocol text files with automatic directory creation.
 import json
 import shutil
 import logging
+import uuid
 from pathlib import Path
 from typing import List, Optional
 
@@ -34,6 +35,24 @@ class StorageManager:
         model_path = self.base_path / model_name
         model_path.mkdir(parents=True, exist_ok=True)
         return model_path
+    
+    def _atomic_write(self, filepath: Path, content: str):
+        """
+        Atomically write content to a file using a temporary file.
+        This prevents corruption if the process is interrupted.
+        """
+        # Use a unique temporary filename in the same directory
+        temp_file = filepath.parent / f".tmp_{uuid.uuid4().hex}_{filepath.name}"
+        try:
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                f.write(content)
+            # Atomic replace
+            temp_file.replace(filepath)
+        except Exception as e:
+            # Clean up temp file if it exists
+            if temp_file.exists():
+                temp_file.unlink()
+            raise e
     
     def load_models(self) -> List[str]:
         """Load list of models from models.json, return in stored order."""
@@ -66,12 +85,8 @@ class StorageManager:
         """Save list of models to models.json with atomic write."""
         self._ensure_directories()
         try:
-            # Write to temporary file first (atomic write)
-            temp_file = self.models_file.with_suffix('.tmp')
-            with open(temp_file, 'w', encoding='utf-8') as f:
-                json.dump({'models': models}, f, indent=2)
-            # Atomic replace
-            temp_file.replace(self.models_file)
+            content = json.dumps({'models': models}, indent=2)
+            self._atomic_write(self.models_file, content)
             logger.debug(f"Saved models: {models}")
         except IOError as e:
             logger.error(f"Failed to save models.json: {e}")
@@ -182,12 +197,8 @@ class StorageManager:
         order_file = model_path / "order.json"
         
         try:
-            # Write to temporary file first (atomic write)
-            temp_file = order_file.with_suffix('.tmp')
-            with open(temp_file, 'w', encoding='utf-8') as f:
-                json.dump({'protocols': protocols}, f, indent=2)
-            # Atomic replace
-            temp_file.replace(order_file)
+            content = json.dumps({'protocols': protocols}, indent=2)
+            self._atomic_write(order_file, content)
             logger.debug(f"Saved protocol order for {model_name}: {protocols}")
         except IOError as e:
             logger.error(f"Failed to save protocol order for {model_name}: {e}")
@@ -216,12 +227,7 @@ class StorageManager:
         protocol_file = model_path / f"{protocol_name}.txt"
         
         try:
-            # Write to temporary file first (atomic write)
-            temp_file = protocol_file.with_suffix('.tmp')
-            with open(temp_file, 'w', encoding='utf-8') as f:
-                f.write(content)
-            # Atomic replace
-            temp_file.replace(protocol_file)
+            self._atomic_write(protocol_file, content)
             logger.debug(f"Saved protocol '{protocol_name}' for model '{model_name}'")
         except IOError as e:
             logger.error(f"Failed to save protocol '{protocol_name}' for model '{model_name}': {e}")
@@ -489,10 +495,8 @@ class StorageManager:
             data['current'] = version
             
             # Atomic write
-            temp_file = versions_file.with_suffix('.tmp')
-            with open(temp_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2)
-            temp_file.replace(versions_file)
+            json_content = json.dumps(data, indent=2)
+            self._atomic_write(versions_file, json_content)
             
             logger.info(f"Set current version to '{version}' for {model_name}/{protocol_name}")
             return True
@@ -534,12 +538,15 @@ class StorageManager:
             latest = versions[-1]
             major, minor = self._parse_version(latest)
             
-            new_version = f"{major}.{minor + 1}"
-            
-            # Check if version already exists (shouldn't happen, but be safe)
-            if new_version in versions:
-                logger.warning(f"Version '{new_version}' already exists, using next available")
-                new_version = f"{major}.{minor + 2}"
+            # Find next available version number
+            next_minor = minor + 1
+            new_version = f"{major}.{next_minor}"
+            while new_version in versions:
+                next_minor += 1
+                new_version = f"{major}.{next_minor}"
+                if next_minor > 1000:  # Safety limit
+                    logger.error(f"Too many versions (>{next_minor}) for {model_name}/{protocol_name}")
+                    return None
             
             # Get content from base version or use current
             content = ""
@@ -562,10 +569,11 @@ class StorageManager:
             versions.append(new_version)
             data['versions'] = versions
             
-            temp_file = versions_file.with_suffix('.tmp')
-            with open(temp_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2)
-            temp_file.replace(versions_file)
+            json_content = json.dumps(data, indent=2)
+            self._atomic_write(versions_file, json_content)
+            
+            logger.info(f"Created new version '{new_version}' for {model_name}/{protocol_name}")
+            return new_version
             
             logger.info(f"Created new version '{new_version}' for {model_name}/{protocol_name}")
             return new_version
@@ -610,10 +618,7 @@ class StorageManager:
         version_file = self._get_version_file(model_name, protocol_name, version)
         
         try:
-            # Atomic write using temporary file
-            temp_file = version_file.with_suffix('.tmp')
-            temp_file.write_text(content, encoding='utf-8')
-            temp_file.replace(version_file)
+            self._atomic_write(version_file, content)
             logger.debug(f"Wrote version '{version}' for {model_name}/{protocol_name}")
         except IOError as e:
             logger.error(f"Failed to write version '{version}' for {model_name}/{protocol_name}: {e}")
