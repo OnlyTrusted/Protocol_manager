@@ -3,14 +3,21 @@ Storage utility for managing models and protocols data.
 Handles JSON files and protocol text files with automatic directory creation.
 """
 import json
-import os
 import shutil
+import logging
+import uuid
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 
 class StorageManager:
     """Manages persistent storage for models and protocols."""
+    
+    # Maximum number of versions allowed per protocol
+    MAX_VERSIONS = 1000
     
     def __init__(self, base_path: str = None):
         """Initialize storage manager with base data path."""
@@ -32,6 +39,24 @@ class StorageManager:
         model_path.mkdir(parents=True, exist_ok=True)
         return model_path
     
+    def _atomic_write(self, filepath: Path, content: str):
+        """
+        Atomically write content to a file using a temporary file.
+        This prevents corruption if the process is interrupted.
+        """
+        # Use a unique temporary filename in the same directory (short UUID)
+        temp_file = filepath.parent / f".tmp_{uuid.uuid4().hex[:8]}_{filepath.name}"
+        try:
+            with open(temp_file, 'w', encoding='utf-8') as f:
+                f.write(content)
+            # Atomic replace
+            temp_file.replace(filepath)
+        except Exception as e:
+            # Clean up temp file if it exists
+            if temp_file.exists():
+                temp_file.unlink()
+            raise e
+    
     def load_models(self) -> List[str]:
         """Load list of models from models.json, return in stored order."""
         if not self.models_file.exists():
@@ -46,16 +71,29 @@ class StorageManager:
         
         try:
             with open(self.models_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+                content = f.read().strip()
+                if not content:
+                    logger.warning("models.json is empty, returning empty list")
+                    return []
+                data = json.loads(content)
                 return data.get('models', [])
-        except (json.JSONDecodeError, IOError):
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse models.json: {e}")
+            return []
+        except IOError as e:
+            logger.error(f"Failed to read models.json: {e}")
             return []
     
     def save_models(self, models: List[str]):
-        """Save list of models to models.json."""
+        """Save list of models to models.json with atomic write."""
         self._ensure_directories()
-        with open(self.models_file, 'w', encoding='utf-8') as f:
-            json.dump({'models': models}, f, indent=2)
+        try:
+            content = json.dumps({'models': models}, indent=2)
+            self._atomic_write(self.models_file, content)
+            logger.debug(f"Saved models: {models}")
+        except IOError as e:
+            logger.error(f"Failed to save models.json: {e}")
+            raise
     
     def add_model(self, model_name: str) -> bool:
         """Add a new model."""
@@ -69,40 +107,67 @@ class StorageManager:
         return True
     
     def rename_model(self, old_name: str, new_name: str) -> bool:
-        """Rename a model and its directory."""
+        """
+        Rename a model and its directory.
+        Returns True if successful, False otherwise.
+        """
         models = self.load_models()
-        if old_name not in models or new_name in models:
+        if old_name not in models:
+            logger.warning(f"Cannot rename: model '{old_name}' not found")
+            return False
+        
+        if new_name in models:
+            logger.warning(f"Cannot rename: model '{new_name}' already exists")
             return False
         
         # Rename directory if it exists
         old_path = self.base_path / old_name
         new_path = self.base_path / new_name
-        if old_path.exists():
-            old_path.rename(new_path)
-        else:
-            self._ensure_model_directory(new_name)
         
-        # Update models list
-        models[models.index(old_name)] = new_name
-        self.save_models(models)
-        return True
+        try:
+            if old_path.exists():
+                if new_path.exists():
+                    logger.error(f"Cannot rename: directory '{new_path}' already exists")
+                    return False
+                old_path.rename(new_path)
+                logger.info(f"Renamed model directory from '{old_name}' to '{new_name}'")
+            else:
+                self._ensure_model_directory(new_name)
+                logger.info(f"Created new directory for model '{new_name}'")
+            
+            # Update models list
+            models[models.index(old_name)] = new_name
+            self.save_models(models)
+            return True
+        except (IOError, OSError) as e:
+            logger.error(f"Failed to rename model '{old_name}' to '{new_name}': {e}")
+            return False
     
     def delete_model(self, model_name: str) -> bool:
-        """Delete a model and its directory."""
+        """
+        Delete a model and its directory.
+        Returns True if successful, False otherwise.
+        """
         models = self.load_models()
         if model_name not in models:
+            logger.warning(f"Cannot delete: model '{model_name}' not found")
             return False
         
-        # Remove from models list
-        models.remove(model_name)
-        self.save_models(models)
-        
-        # Delete directory if it exists
-        model_path = self.base_path / model_name
-        if model_path.exists():
-            shutil.rmtree(model_path)
-        
-        return True
+        try:
+            # Remove from models list
+            models.remove(model_name)
+            self.save_models(models)
+            
+            # Delete directory if it exists
+            model_path = self.base_path / model_name
+            if model_path.exists():
+                shutil.rmtree(model_path)
+                logger.info(f"Deleted model '{model_name}' and its directory")
+            
+            return True
+        except (IOError, OSError) as e:
+            logger.error(f"Failed to delete model '{model_name}': {e}")
+            return False
     
     def load_protocol_order(self, model_name: str) -> List[str]:
         """Load protocol order for a specific model."""
@@ -116,18 +181,31 @@ class StorageManager:
         
         try:
             with open(order_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+                content = f.read().strip()
+                if not content:
+                    logger.warning(f"order.json for {model_name} is empty")
+                    return []
+                data = json.loads(content)
                 return data.get('protocols', [])
-        except (json.JSONDecodeError, IOError):
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse order.json for {model_name}: {e}")
+            return []
+        except IOError as e:
+            logger.error(f"Failed to read order.json for {model_name}: {e}")
             return []
     
     def save_protocol_order(self, model_name: str, protocols: List[str]):
-        """Save protocol order for a specific model."""
+        """Save protocol order for a specific model with atomic write."""
         model_path = self._ensure_model_directory(model_name)
         order_file = model_path / "order.json"
         
-        with open(order_file, 'w', encoding='utf-8') as f:
-            json.dump({'protocols': protocols}, f, indent=2)
+        try:
+            content = json.dumps({'protocols': protocols}, indent=2)
+            self._atomic_write(order_file, content)
+            logger.debug(f"Saved protocol order for {model_name}: {protocols}")
+        except IOError as e:
+            logger.error(f"Failed to save protocol order for {model_name}: {e}")
+            raise
     
     def load_protocol(self, model_name: str, protocol_name: str) -> str:
         """Load protocol content from text file."""
@@ -142,16 +220,21 @@ class StorageManager:
         try:
             with open(protocol_file, 'r', encoding='utf-8') as f:
                 return f.read()
-        except IOError:
+        except IOError as e:
+            logger.error(f"Failed to read protocol '{protocol_name}' for model '{model_name}': {e}")
             return ""
     
     def save_protocol(self, model_name: str, protocol_name: str, content: str):
-        """Save protocol content to text file."""
+        """Save protocol content to text file with atomic write."""
         model_path = self._ensure_model_directory(model_name)
         protocol_file = model_path / f"{protocol_name}.txt"
         
-        with open(protocol_file, 'w', encoding='utf-8') as f:
-            f.write(content)
+        try:
+            self._atomic_write(protocol_file, content)
+            logger.debug(f"Saved protocol '{protocol_name}' for model '{model_name}'")
+        except IOError as e:
+            logger.error(f"Failed to save protocol '{protocol_name}' for model '{model_name}': {e}")
+            raise
     
     def add_protocol(self, model_name: str, protocol_name: str) -> bool:
         """Add a new protocol to a model."""
@@ -165,46 +248,85 @@ class StorageManager:
         return True
     
     def rename_protocol(self, model_name: str, old_name: str, new_name: str) -> bool:
-        """Rename a protocol and its file."""
+        """
+        Rename a protocol and its file.
+        Returns True if successful, False otherwise.
+        """
         protocols = self.load_protocol_order(model_name)
-        if old_name not in protocols or new_name in protocols:
+        if old_name not in protocols:
+            logger.warning(f"Cannot rename: protocol '{old_name}' not found in model '{model_name}'")
             return False
         
-        # Rename file if it exists
-        old_file = self.base_path / model_name / f"{old_name}.txt"
-        new_file = self.base_path / model_name / f"{new_name}.txt"
+        if new_name in protocols:
+            logger.warning(f"Cannot rename: protocol '{new_name}' already exists in model '{model_name}'")
+            return False
         
-        if old_file.exists():
-            old_file.rename(new_file)
-        else:
-            self.save_protocol(model_name, new_name, "")
-        
-        # Update protocol order
-        protocols[protocols.index(old_name)] = new_name
-        self.save_protocol_order(model_name, protocols)
-        return True
+        try:
+            # Rename versioned directory if it exists
+            old_dir = self.base_path / model_name / old_name
+            new_dir = self.base_path / model_name / new_name
+            
+            if old_dir.exists() and old_dir.is_dir():
+                if new_dir.exists():
+                    logger.error(f"Cannot rename: directory '{new_dir}' already exists")
+                    return False
+                old_dir.rename(new_dir)
+                logger.info(f"Renamed protocol directory from '{old_name}' to '{new_name}'")
+            else:
+                # Try legacy .txt file
+                old_file = self.base_path / model_name / f"{old_name}.txt"
+                new_file = self.base_path / model_name / f"{new_name}.txt"
+                
+                if old_file.exists():
+                    if new_file.exists():
+                        logger.error(f"Cannot rename: file '{new_file}' already exists")
+                        return False
+                    old_file.rename(new_file)
+                    logger.info(f"Renamed protocol file from '{old_name}.txt' to '{new_name}.txt'")
+                else:
+                    # No file exists, just create empty version structure
+                    self.save_protocol(model_name, new_name, "")
+                    logger.info(f"Created new protocol '{new_name}' (no old file found)")
+            
+            # Update protocol order
+            protocols[protocols.index(old_name)] = new_name
+            self.save_protocol_order(model_name, protocols)
+            return True
+        except (IOError, OSError) as e:
+            logger.error(f"Failed to rename protocol '{old_name}' to '{new_name}' in model '{model_name}': {e}")
+            return False
     
     def delete_protocol(self, model_name: str, protocol_name: str) -> bool:
-        """Delete a protocol and its file/folder."""
+        """
+        Delete a protocol and its file/folder.
+        Returns True if successful, False otherwise.
+        """
         protocols = self.load_protocol_order(model_name)
         if protocol_name not in protocols:
+            logger.warning(f"Cannot delete: protocol '{protocol_name}' not found in model '{model_name}'")
             return False
         
-        # Remove from order
-        protocols.remove(protocol_name)
-        self.save_protocol_order(model_name, protocols)
-        
-        # Delete versioned protocol directory if it exists
-        protocol_dir = self._get_protocol_dir(model_name, protocol_name)
-        if protocol_dir.exists():
-            shutil.rmtree(protocol_dir)
-        
-        # Delete legacy .txt file if it exists
-        protocol_file = self.base_path / model_name / f"{protocol_name}.txt"
-        if protocol_file.exists():
-            protocol_file.unlink()
-        
-        return True
+        try:
+            # Remove from order
+            protocols.remove(protocol_name)
+            self.save_protocol_order(model_name, protocols)
+            
+            # Delete versioned protocol directory if it exists
+            protocol_dir = self._get_protocol_dir(model_name, protocol_name)
+            if protocol_dir.exists():
+                shutil.rmtree(protocol_dir)
+                logger.info(f"Deleted protocol directory '{protocol_name}'")
+            
+            # Delete legacy .txt file if it exists
+            protocol_file = self.base_path / model_name / f"{protocol_name}.txt"
+            if protocol_file.exists():
+                protocol_file.unlink()
+                logger.info(f"Deleted legacy protocol file '{protocol_name}.txt'")
+            
+            return True
+        except (IOError, OSError) as e:
+            logger.error(f"Failed to delete protocol '{protocol_name}' from model '{model_name}': {e}")
+            return False
     
     # ============= Version Management Methods =============
     
@@ -235,49 +357,60 @@ class StorageManager:
         """
         Ensure protocol has version structure. Migrates old .txt format if needed.
         Creates versions.json with 1.0 as default if missing.
+        This method is idempotent - safe to call multiple times.
         """
         protocol_dir = self._get_protocol_dir(model_name, protocol_name)
         versions_file = self._get_versions_file(model_name, protocol_name)
         old_protocol_file = self.base_path / model_name / f"{protocol_name}.txt"
         
-        # Check if we need to migrate from old format
-        if not versions_file.exists() and old_protocol_file.exists():
-            # Migration: old flat .txt file exists
-            protocol_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Read old content
-            content = old_protocol_file.read_text(encoding='utf-8')
-            
-            # Create version 1.0 with the old content
-            version_file = self._get_version_file(model_name, protocol_name, "1.0")
-            version_file.write_text(content, encoding='utf-8')
-            
-            # Create versions.json
-            versions_data = {
-                "versions": ["1.0"],
-                "current": "1.0"
-            }
-            with open(versions_file, 'w', encoding='utf-8') as f:
-                json.dump(versions_data, f, indent=2)
-            
-            # Delete old file
-            old_protocol_file.unlink()
-            
-        elif not versions_file.exists():
-            # No old file, create fresh versioning structure
-            protocol_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Create empty version 1.0
-            version_file = self._get_version_file(model_name, protocol_name, "1.0")
-            version_file.write_text("", encoding='utf-8')
-            
-            # Create versions.json
-            versions_data = {
-                "versions": ["1.0"],
-                "current": "1.0"
-            }
-            with open(versions_file, 'w', encoding='utf-8') as f:
-                json.dump(versions_data, f, indent=2)
+        # Already has versioning structure
+        if versions_file.exists():
+            return
+        
+        try:
+            # Check if we need to migrate from old format
+            if old_protocol_file.exists():
+                # Migration: old flat .txt file exists
+                protocol_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Read old content
+                content = old_protocol_file.read_text(encoding='utf-8')
+                
+                # Create version 1.0 with the old content (atomic write)
+                version_file = self._get_version_file(model_name, protocol_name, "1.0")
+                self._atomic_write(version_file, content)
+                
+                # Create versions.json (atomic write)
+                versions_data = {
+                    "versions": ["1.0"],
+                    "current": "1.0"
+                }
+                json_content = json.dumps(versions_data, indent=2)
+                self._atomic_write(versions_file, json_content)
+                
+                # Delete old file
+                old_protocol_file.unlink()
+                logger.info(f"Migrated protocol '{protocol_name}' from old format to versioned format")
+                
+            else:
+                # No old file, create fresh versioning structure
+                protocol_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Create empty version 1.0 (atomic write)
+                version_file = self._get_version_file(model_name, protocol_name, "1.0")
+                self._atomic_write(version_file, "")
+                
+                # Create versions.json (atomic write)
+                versions_data = {
+                    "versions": ["1.0"],
+                    "current": "1.0"
+                }
+                json_content = json.dumps(versions_data, indent=2)
+                self._atomic_write(versions_file, json_content)
+                logger.info(f"Created new versioning structure for protocol '{protocol_name}'")
+        except (IOError, OSError) as e:
+            logger.error(f"Failed to ensure protocol versions for {model_name}/{protocol_name}: {e}")
+            raise
     
     def list_versions(self, model_name: str, protocol_name: str) -> List[str]:
         """
@@ -291,12 +424,20 @@ class StorageManager:
         
         try:
             with open(versions_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+                content = f.read().strip()
+                if not content:
+                    logger.warning(f"versions.json for {model_name}/{protocol_name} is empty")
+                    return []
+                data = json.loads(content)
                 versions = data.get('versions', [])
                 
                 # Sort versions by semantic versioning
                 return sorted(versions, key=self._parse_version)
-        except (json.JSONDecodeError, IOError):
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse versions.json for {model_name}/{protocol_name}: {e}")
+            return []
+        except IOError as e:
+            logger.error(f"Failed to read versions.json for {model_name}/{protocol_name}: {e}")
             return []
     
     def get_current_version(self, model_name: str, protocol_name: str) -> str:
@@ -311,9 +452,23 @@ class StorageManager:
         
         try:
             with open(versions_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return data.get('current', "1.0")
-        except (json.JSONDecodeError, IOError):
+                content = f.read().strip()
+                if not content:
+                    logger.warning(f"versions.json for {model_name}/{protocol_name} is empty, returning default '1.0'")
+                    return "1.0"
+                data = json.loads(content)
+                current = data.get('current', "1.0")
+                # Verify current version exists in versions list
+                versions = data.get('versions', [])
+                if current not in versions and versions:
+                    logger.warning(f"Current version '{current}' not in versions list, using first version")
+                    return versions[0]
+                return current
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse versions.json for {model_name}/{protocol_name}: {e}, returning default '1.0'")
+            return "1.0"
+        except IOError as e:
+            logger.error(f"Failed to read versions.json for {model_name}/{protocol_name}: {e}, returning default '1.0'")
             return "1.0"
     
     def set_current_version(self, model_name: str, protocol_name: str, version: str) -> bool:
@@ -324,53 +479,88 @@ class StorageManager:
         versions_file = self._get_versions_file(model_name, protocol_name)
         
         if not versions_file.exists():
+            logger.warning(f"Cannot set current version: versions.json not found for {model_name}/{protocol_name}")
             return False
         
         try:
             with open(versions_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+                content = f.read().strip()
+                if not content:
+                    logger.error(f"versions.json for {model_name}/{protocol_name} is empty")
+                    return False
+                data = json.loads(content)
             
             # Verify version exists
             if version not in data.get('versions', []):
+                logger.warning(f"Version '{version}' not found in versions list")
                 return False
             
             data['current'] = version
             
-            with open(versions_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2)
+            # Atomic write
+            json_content = json.dumps(data, indent=2)
+            self._atomic_write(versions_file, json_content)
             
+            logger.info(f"Set current version to '{version}' for {model_name}/{protocol_name}")
             return True
-        except (json.JSONDecodeError, IOError):
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse versions.json for {model_name}/{protocol_name}: {e}")
+            return False
+        except IOError as e:
+            logger.error(f"Failed to update versions.json for {model_name}/{protocol_name}: {e}")
             return False
     
     def create_new_version(self, model_name: str, protocol_name: str, base_version: str = None) -> Optional[str]:
         """
-        Create a new version by incrementing the patch number.
-        Copies content from base_version if provided, otherwise empty.
+        Create a new version by incrementing the minor version number.
+        For example: 1.0 → 1.1, 1.5 → 1.6
+        Copies content from base_version if provided, otherwise from current version.
         Returns the new version name (e.g., "1.1") or None if failed.
         """
         versions_file = self._get_versions_file(model_name, protocol_name)
         
         if not versions_file.exists():
+            logger.error(f"Cannot create version: versions.json not found for {model_name}/{protocol_name}")
             return None
         
         try:
             with open(versions_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+                content = f.read().strip()
+                if not content:
+                    logger.error(f"versions.json for {model_name}/{protocol_name} is empty")
+                    return None
+                data = json.loads(content)
             
             # Use list_versions to get sorted list
             versions = self.list_versions(model_name, protocol_name)
             
             if not versions:
+                logger.error(f"No versions found for {model_name}/{protocol_name}")
                 return None
             
-            # Get the latest version and increment patch
+            # Get the latest version and increment minor version
+            # list_versions returns sorted versions, so the last one is latest
             latest = versions[-1]
             major, minor = self._parse_version(latest)
             
-            new_version = f"{major}.{minor + 1}"
+            # Validate that we got the highest version
+            for v in versions:
+                v_major, v_minor = self._parse_version(v)
+                if (v_major, v_minor) > (major, minor):
+                    major, minor = v_major, v_minor
+                    latest = v
             
-            # Get content from base version or use empty
+            # Find next available version number
+            next_minor = minor + 1
+            new_version = f"{major}.{next_minor}"
+            while new_version in versions:
+                next_minor += 1
+                new_version = f"{major}.{next_minor}"
+                if next_minor > self.MAX_VERSIONS:
+                    logger.error(f"Too many versions (>{next_minor}) for {model_name}/{protocol_name}")
+                    return None
+            
+            # Get content from base version or use current
             content = ""
             if base_version and base_version in versions:
                 base_file = self._get_version_file(model_name, protocol_name, base_version)
@@ -383,19 +573,24 @@ class StorageManager:
                 if current_file.exists():
                     content = current_file.read_text(encoding='utf-8')
             
-            # Create new version file
+            # Create new version file (atomic write)
             new_file = self._get_version_file(model_name, protocol_name, new_version)
-            new_file.write_text(content, encoding='utf-8')
+            self._atomic_write(new_file, content)
             
-            # Update versions.json
+            # Update versions.json with atomic write
             versions.append(new_version)
             data['versions'] = versions
             
-            with open(versions_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2)
+            json_content = json.dumps(data, indent=2)
+            self._atomic_write(versions_file, json_content)
             
+            logger.info(f"Created new version '{new_version}' for {model_name}/{protocol_name}")
             return new_version
-        except (json.JSONDecodeError, IOError, ValueError):
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse versions.json for {model_name}/{protocol_name}: {e}")
+            return None
+        except (IOError, OSError, ValueError) as e:
+            logger.error(f"Failed to create new version for {model_name}/{protocol_name}: {e}")
             return None
     
     def read_version(self, model_name: str, protocol_name: str, version: str = None) -> str:
@@ -413,22 +608,30 @@ class StorageManager:
         version_file = self._get_version_file(model_name, protocol_name, version)
         
         if not version_file.exists():
+            logger.warning(f"Version file not found: {version_file}")
             return ""
         
         try:
             return version_file.read_text(encoding='utf-8')
-        except IOError:
+        except IOError as e:
+            logger.error(f"Failed to read version '{version}' for {model_name}/{protocol_name}: {e}")
             return ""
     
     def write_version(self, model_name: str, protocol_name: str, version: str, content: str):
         """
-        Write content to a specific version file.
+        Write content to a specific version file with atomic write.
         """
         # Ensure versioning is set up
         self.ensure_protocol_versions(model_name, protocol_name)
         
         version_file = self._get_version_file(model_name, protocol_name, version)
-        version_file.write_text(content, encoding='utf-8')
+        
+        try:
+            self._atomic_write(version_file, content)
+            logger.debug(f"Wrote version '{version}' for {model_name}/{protocol_name}")
+        except IOError as e:
+            logger.error(f"Failed to write version '{version}' for {model_name}/{protocol_name}: {e}")
+            raise
 
 
 # Global storage manager instance

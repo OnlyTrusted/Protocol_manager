@@ -3,7 +3,6 @@ Main window - application entry point with layout and menu.
 """
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, 
                              QAction, QStatusBar)
-from PyQt5.QtCore import Qt
 
 from .styles import get_main_window_stylesheet
 from .signals import signals
@@ -63,23 +62,13 @@ class MainWindow(QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
         
-        # Edit menu
-        edit_menu = menubar.addMenu("Edit")
-        
-        # Placeholder for future edit actions
-        
         # Manage Hierarchy menu
-        manage_menu = menubar.addMenu("Manage Hierarchy")
+        manage_menu = menubar.addMenu("Manage")
         
         hierarchy_action = QAction("Reorder Models/Protocols", self)
         hierarchy_action.setShortcut("Ctrl+H")
         hierarchy_action.triggered.connect(self._show_hierarchy_dialog)
         manage_menu.addAction(hierarchy_action)
-        
-        # View menu
-        view_menu = menubar.addMenu("View")
-        
-        # Placeholder for future view actions
     
     def _setup_statusbar(self):
         """Set up the status bar."""
@@ -105,3 +94,9 @@ class MainWindow(QMainWindow):
         """Show the hierarchy management dialog."""
         dialog = HierarchyDialog(self)
         dialog.exec_()
+    
+    def closeEvent(self, event):
+        """Handle cleanup when window is closed."""
+        # Save any pending editor content before closing
+        self.editor_panel.save_and_cleanup()
+        event.accept()
