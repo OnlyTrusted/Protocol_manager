@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 class StorageManager:
     """Manages persistent storage for models and protocols."""
     
+    # Maximum number of versions allowed per protocol
+    MAX_VERSIONS = 1000
+    
     def __init__(self, base_path: str = None):
         """Initialize storage manager with base data path."""
         if base_path is None:
@@ -41,8 +44,8 @@ class StorageManager:
         Atomically write content to a file using a temporary file.
         This prevents corruption if the process is interrupted.
         """
-        # Use a unique temporary filename in the same directory
-        temp_file = filepath.parent / f".tmp_{uuid.uuid4().hex}_{filepath.name}"
+        # Use a unique temporary filename in the same directory (short UUID)
+        temp_file = filepath.parent / f".tmp_{uuid.uuid4().hex[:8]}_{filepath.name}"
         try:
             with open(temp_file, 'w', encoding='utf-8') as f:
                 f.write(content)
@@ -509,7 +512,8 @@ class StorageManager:
     
     def create_new_version(self, model_name: str, protocol_name: str, base_version: str = None) -> Optional[str]:
         """
-        Create a new version by incrementing the patch number.
+        Create a new version by incrementing the minor version number.
+        For example: 1.0 → 1.1, 1.5 → 1.6
         Copies content from base_version if provided, otherwise from current version.
         Returns the new version name (e.g., "1.1") or None if failed.
         """
@@ -534,9 +538,17 @@ class StorageManager:
                 logger.error(f"No versions found for {model_name}/{protocol_name}")
                 return None
             
-            # Get the latest version and increment patch
+            # Get the latest version and increment minor version
+            # list_versions returns sorted versions, so the last one is latest
             latest = versions[-1]
             major, minor = self._parse_version(latest)
+            
+            # Validate that we got the highest version
+            for v in versions:
+                v_major, v_minor = self._parse_version(v)
+                if (v_major, v_minor) > (major, minor):
+                    major, minor = v_major, v_minor
+                    latest = v
             
             # Find next available version number
             next_minor = minor + 1
@@ -544,7 +556,7 @@ class StorageManager:
             while new_version in versions:
                 next_minor += 1
                 new_version = f"{major}.{next_minor}"
-                if next_minor > 1000:  # Safety limit
+                if next_minor > self.MAX_VERSIONS:
                     logger.error(f"Too many versions (>{next_minor}) for {model_name}/{protocol_name}")
                     return None
             

@@ -1,9 +1,10 @@
 """Dialog utilities for input and confirmation."""
 import re
+from typing import Tuple
 from PyQt5.QtWidgets import QInputDialog, QMessageBox
 
 
-def validate_name(name: str) -> tuple:
+def validate_name(name: str) -> Tuple[bool, str]:
     """
     Validate a model or protocol name.
     Returns (valid: bool, error_message: str).
