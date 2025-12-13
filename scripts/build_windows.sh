@@ -33,7 +33,12 @@ STAGING="installer/staging"
 rm -rf "${STAGING}"
 mkdir -p "${STAGING}/bin"
 cp "${EXE_PATH}" "${STAGING}/bin/${APP_NAME}.exe"
-cp "${ICON}" "${STAGING}/" 2>/dev/null || true
+if [ -f "${ICON}" ]; then
+  cp "${ICON}" "${STAGING}/"
+  echo "Icon file copied to staging."
+else
+  echo "Icon file not found at ${ICON}; using default icon."
+fi
 
 if [ -f "${NSIS_TEMPLATE}" ]; then
   sed "s|{{APP_NAME}}|${APP_NAME}|g; s|{{VERSION}}|${VERSION}|g" "${NSIS_TEMPLATE}" > "${NSIS_SCRIPT}"

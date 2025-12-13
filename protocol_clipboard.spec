@@ -10,7 +10,7 @@ a = Analysis(
     ['protocol_clipboard/main.py'],
     pathex=[],
     binaries=[],
-    datas=[('data', 'data'), ('resources', 'resources')],
+    datas=[('protocol_clipboard/data', 'protocol_clipboard/data'), ('resources', 'resources')],
     hiddenimports=[],
     hookspath=[],
 )
