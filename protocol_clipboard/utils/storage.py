@@ -373,17 +373,17 @@ class StorageManager:
                 # Read old content
                 content = old_protocol_file.read_text(encoding='utf-8')
                 
-                # Create version 1.0 with the old content
+                # Create version 1.0 with the old content (atomic write)
                 version_file = self._get_version_file(model_name, protocol_name, "1.0")
-                version_file.write_text(content, encoding='utf-8')
+                self._atomic_write(version_file, content)
                 
-                # Create versions.json
+                # Create versions.json (atomic write)
                 versions_data = {
                     "versions": ["1.0"],
                     "current": "1.0"
                 }
-                with open(versions_file, 'w', encoding='utf-8') as f:
-                    json.dump(versions_data, f, indent=2)
+                json_content = json.dumps(versions_data, indent=2)
+                self._atomic_write(versions_file, json_content)
                 
                 # Delete old file
                 old_protocol_file.unlink()
@@ -393,17 +393,17 @@ class StorageManager:
                 # No old file, create fresh versioning structure
                 protocol_dir.mkdir(parents=True, exist_ok=True)
                 
-                # Create empty version 1.0
+                # Create empty version 1.0 (atomic write)
                 version_file = self._get_version_file(model_name, protocol_name, "1.0")
-                version_file.write_text("", encoding='utf-8')
+                self._atomic_write(version_file, "")
                 
-                # Create versions.json
+                # Create versions.json (atomic write)
                 versions_data = {
                     "versions": ["1.0"],
                     "current": "1.0"
                 }
-                with open(versions_file, 'w', encoding='utf-8') as f:
-                    json.dump(versions_data, f, indent=2)
+                json_content = json.dumps(versions_data, indent=2)
+                self._atomic_write(versions_file, json_content)
                 logger.info(f"Created new versioning structure for protocol '{protocol_name}'")
         except (IOError, OSError) as e:
             logger.error(f"Failed to ensure protocol versions for {model_name}/{protocol_name}: {e}")
@@ -561,9 +561,9 @@ class StorageManager:
                 if current_file.exists():
                     content = current_file.read_text(encoding='utf-8')
             
-            # Create new version file
+            # Create new version file (atomic write)
             new_file = self._get_version_file(model_name, protocol_name, new_version)
-            new_file.write_text(content, encoding='utf-8')
+            self._atomic_write(new_file, content)
             
             # Update versions.json with atomic write
             versions.append(new_version)
@@ -571,9 +571,6 @@ class StorageManager:
             
             json_content = json.dumps(data, indent=2)
             self._atomic_write(versions_file, json_content)
-            
-            logger.info(f"Created new version '{new_version}' for {model_name}/{protocol_name}")
-            return new_version
             
             logger.info(f"Created new version '{new_version}' for {model_name}/{protocol_name}")
             return new_version
