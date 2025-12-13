@@ -14,17 +14,16 @@ class AppSignals(QObject):
     # Emitted when a protocol is selected (model_name, protocol_name, version)
     protocol_selected = pyqtSignal(str, str, str)
     
-    # Emitted when a protocol is loaded (model_name, protocol_name, version)
+    # Emitted when a protocol is loaded into editor and copied to clipboard
+    # (model_name, protocol_name, version)
     protocol_loaded = pyqtSignal(str, str, str)
     
-    # Emitted when a protocol is saved (model_name, protocol_name, version)
+    # Emitted when a protocol is saved (for future use, e.g., status indication)
+    # (model_name, protocol_name, version)
     protocol_saved = pyqtSignal(str, str, str)
     
-    # Deprecated: Kept for backward compatibility, but no longer emitted for load/save operations
-    # Use protocol_loaded and protocol_saved instead
-    protocol_updated = pyqtSignal(str, str, str, str)
-    
-    # Emitted when a version is changed for a protocol (model_name, protocol_name, version)
+    # Emitted when the current version is changed for a protocol (for future use)
+    # (model_name, protocol_name, version)
     version_changed = pyqtSignal(str, str, str)
     
     # Emitted when hierarchy (ordering) changes

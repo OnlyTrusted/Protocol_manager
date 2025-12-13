@@ -109,3 +109,11 @@ class EditorPanel(QWidget):
         self.current_model = None
         self.current_protocol = None
         self.current_version = None
+    
+    def save_and_cleanup(self):
+        """Save any pending content and stop timers. Called when application closes."""
+        # Stop autosave timer
+        if self.autosave_timer.isActive():
+            self.autosave_timer.stop()
+        # Save any pending content
+        self._save_content()
